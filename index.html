@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ML-NIDS · Live Threat Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#070b14; --bg2:#0c1322; --panel:#101828; --panel2:#0d1524; --line:#1c2740; --line2:#243352;
+  --txt:#e8edf7; --mut:#7d8ba8; --dim:#4f5d7a;
+  --ok:#34d399; --warn:#fbbf24; --bad:#f43f5e; --acc:#60a5fa; --acc2:#a78bfa;
+}
+*{box-sizing:border-box}
+html,body{overflow-x:hidden}
+body{margin:0;color:var(--txt);min-height:100vh;font-size:14px;font-family:Inter,"Segoe UI",system-ui,sans-serif;
+  background:radial-gradient(900px 500px at 85% -10%,#1b2a55 0,transparent 60%),
+             radial-gradient(700px 400px at -5% 0,#2a1b55 0,transparent 55%),var(--bg)}
+
+/* header */
+header{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;
+  padding:16px 26px;border-bottom:1px solid var(--line);background:#070b14cc;backdrop-filter:blur(10px);
+  position:sticky;top:0;z-index:10}
+.brand{display:flex;gap:12px;align-items:center}
+.logo{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;font-size:18px;color:#fff;
+  background:linear-gradient(135deg,var(--acc),var(--acc2));box-shadow:0 8px 24px #60a5fa33}
+h1{font-size:17px;margin:0;font-weight:700;letter-spacing:.2px}
+.brand p{margin:3px 0 0;color:var(--mut);font-size:12px}
+.pill{padding:6px 13px;border-radius:99px;font-size:11px;font-weight:700;letter-spacing:.8px;border:1px solid var(--line2);color:var(--mut);background:#0b1220}
+.pill.on{color:#04261b;background:var(--ok);border-color:var(--ok);box-shadow:0 0 18px #34d39955}
+.pill.warn{color:#2a1d00;background:var(--warn);border-color:var(--warn)}
+.pill.bad{color:#fff;background:var(--bad);border-color:var(--bad)}
+
+main{padding:20px 26px 40px;max-width:1420px;margin:0 auto;display:grid;gap:16px;min-width:0}
+main>*{min-width:0}
+
+.panel{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);
+  border-radius:16px;padding:18px;min-width:0}
+h3{margin:0 0 12px;font-size:13px;font-weight:700;letter-spacing:.3px;color:#dfe6f3;
+  display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.muted{color:var(--mut);font-size:12px;font-weight:400}
+
+/* control bar */
+.control{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) auto;gap:14px;align-items:end}
+.field{display:grid;gap:7px;min-width:0}
+.label{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:1px;font-weight:600}
+input,select{width:100%;background:#0a1120;color:var(--txt);border:1px solid var(--line2);border-radius:11px;
+  padding:12px 14px;font-size:14px;outline:none;transition:border-color .2s,box-shadow .2s}
+input{font-family:Consolas,"SFMono-Regular",monospace;letter-spacing:.3px}
+input::placeholder{color:var(--dim)}
+input:focus,select:focus{border-color:var(--acc);box-shadow:0 0 0 3px #60a5fa22}
+input:disabled,select:disabled{opacity:.55}
+.hint{font-size:12px;color:var(--mut)}
+.actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.btn{border:0;border-radius:11px;padding:12px 18px;font-weight:700;font-size:13px;cursor:pointer;
+  text-decoration:none;display:inline-flex;align-items:center;gap:8px;white-space:nowrap;transition:transform .15s,opacity .2s}
+.btn:hover{transform:translateY(-1px)}
+.btn:disabled,.btn.off{opacity:.35;cursor:not-allowed;pointer-events:none;transform:none}
+.go{background:linear-gradient(135deg,#34d399,#10b981);color:#03130d;box-shadow:0 8px 20px #10b98133}
+.stop{background:#1a0d14;color:#fb7185;border:1px solid #4c1d2b}
+.stop:not(:disabled){background:linear-gradient(135deg,#f43f5e,#e11d48);color:#fff;border-color:transparent;box-shadow:0 8px 20px #f43f5e33}
+.rep{background:linear-gradient(135deg,var(--acc),var(--acc2));color:#fff;box-shadow:0 8px 20px #60a5fa33}
+.ghost{background:#0b1220;color:var(--txt);border:1px solid var(--line2)}
+
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
+.chip{font-size:11px;padding:5px 11px;border-radius:99px;background:#0b1220;border:1px solid var(--line2);color:var(--mut)}
+.chip b{color:var(--txt);font-weight:600}
+
+/* training / banners */
+.train{display:grid;gap:10px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.bar{height:6px;background:#0a1120;border-radius:99px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--acc),var(--acc2));transition:width .4s}
+.banner{padding:12px 16px;border-radius:12px;background:#2a0f18;border:1px solid #7f1d35;color:#fecdd3;font-weight:600;font-size:13px}
+
+/* stat cards */
+.cards{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px}
+.card{position:relative;overflow:hidden;min-width:0;border-radius:16px;padding:16px 16px 14px;
+  background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line)}
+.card:after{content:"";position:absolute;right:-30px;top:-30px;width:90px;height:90px;border-radius:50%;
+  background:var(--glow,#60a5fa22);filter:blur(6px)}
+.card small{display:block;color:var(--mut);font-size:10px;text-transform:uppercase;letter-spacing:1px;font-weight:600;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card b{display:block;font-size:26px;margin-top:8px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.3px}
+.card.ok{--glow:#34d39933}.card.warn{--glow:#fbbf2433}.card.bad{--glow:#f43f5e33}
+.card.ok b{color:var(--ok)}.card.bad b{color:#fb7185}
+.card.warn b{color:var(--warn)}
+
+/* Dataset Input card styling */
+.card:has(#datasetForm) {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.card:has(#datasetForm)::after {
+  display: none;
+}
+
+#datasetFile {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 4px 0;
+  font-size: 11px;
+}
+
+#datasetForm button {
+  background: linear-gradient(135deg, var(--acc), var(--acc2));
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 7px 10px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+/* layout rows */
+.row2{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px}
+.row2b{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+.chart{position:relative;height:240px;width:100%}
+
+/* hosts */
+.hosts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.hostcard{border:1px solid var(--line);border-radius:12px;padding:11px 12px;display:grid;gap:6px;background:#0b1220;min-width:0}
+.hostcard b{font-family:Consolas,monospace;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hostcard.Suspicious{border-color:#7c5a10}.hostcard.Malicious{border-color:#7f1d35}
+.hostcard .muted{font-size:11px}
+.badge{display:inline-block;padding:3px 9px;border-radius:99px;font-size:10px;font-weight:800;letter-spacing:.5px;justify-self:start}
+.badge.Normal{background:#052e22;color:var(--ok)}.badge.Suspicious{background:#2e2205;color:var(--warn)}.badge.Malicious{background:#2e0c17;color:#fb7185}
+.empty{color:var(--mut);padding:18px;text-align:center;font-size:13px}
+
+/* tables */
+.tablewrap{overflow:auto;max-width:100%}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle;white-space:nowrap}
+th{color:var(--mut);font-size:10px;text-transform:uppercase;letter-spacing:.8px;font-weight:700}
+td{color:#d6deeb}
+.mbar{height:5px;background:#0a1120;border-radius:99px;overflow:hidden;min-width:64px;margin-bottom:4px}
+.mbar i{display:block;height:100%;background:linear-gradient(90deg,var(--acc),var(--acc2))}
+.mono{font-family:Consolas,monospace;font-size:11px;color:var(--mut)}
+.ok2{color:var(--ok)}.bad2{color:#fb7185}
+
+.grid2m{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+.grid2m table th,.grid2m table td{padding:8px 6px;font-size:11px}
+@media(max-width:980px){.grid2m{grid-template-columns:minmax(0,1fr)}}
+[hidden]{display:none!important}
+.sub{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin:6px 0 10px;font-size:13px;color:#dfe6f3}
+.mbar i{transition:width .6s ease}
+@media(max-width:1180px){.cards{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:980px){.row2,.row2b{grid-template-columns:minmax(0,1fr)}.control{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:600px){.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.hosts{grid-template-columns:repeat(2,minmax(0,1fr))}main{padding:14px}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="logo">◈</div>
+    <div>
+      <h1>ML-Based Network Intrusion Detection</h1>
+      <p>XGBoost · LSTM · Autoencoder · Ensemble Fusion · SHAP explanations</p>
+    </div>
+  </div>
+  <span id="pill" class="pill">LOADING</span>
+</header>
+
+<main>
+  <section class="panel">
+    <div class="control">
+      <div class="field">
+        <div class="label">Source IP</div>
+        <input id="ip" placeholder="192.168.1.10" autocomplete="off" spellcheck="false">
+        <div class="hint">Leave empty to monitor all hosts.</div>
+      </div>
+      <div class="field">
+        <div class="label">Mode</div>
+        <select id="mode">
+          <option value="simulator">Simulator</option>
+          <option value="live">Live capture</option>
+        </select>
+      </div>
+      <div class="actions">
+        <button id="btnStart" class="btn go" disabled>▶ Start</button>
+        <button id="btnStop" class="btn stop" disabled>■ Stop</button>
+        <a id="btnReport" class="btn rep off" href="/report" target="_blank" rel="noopener">Generate report</a>
+        <a id="btnCsv" class="btn ghost off" href="/api/report.csv">Export CSV</a>
+      </div>
+    </div>
+    <div id="backends" class="chips"></div>
+  </section>
+
+  <section id="trainBox" class="panel train">
+    <div class="row">
+      <b id="trainStage">Starting</b>
+      <span class="muted">Training automatically on synthetic traffic, no dataset download needed</span>
+    </div>
+    <div class="bar"><i id="trainBar"></i></div>
+    <div id="trainErr" class="banner" hidden></div>
+  </section>
+
+  <div id="err" class="banner" hidden></div>
+
+  <section class="cards">
+    <div class="card"><small>Windows analysed</small><b id="cWin">0</b></div>
+    <div class="card ok"><small>Normal</small><b id="cNor">0</b></div>
+    <div class="card warn"><small>Suspicious</small><b id="cSus">0</b></div>
+    <div class="card bad"><small>Malicious</small><b id="cMal">0</b></div>
+    <div class="card"><small>Active hosts</small><b id="cHost">0</b></div>
+    <div class="card">
+    <small>Dataset Input</small>
+    <form id="datasetForm" enctype="multipart/form-data">
+        <input type="file" id="datasetFile" name="dataset"
+               accept=".csv" required>
+        <button type="submit">Upload CSV</button>
+    </form>
+    <small id="datasetMessage">Choose a CSV dataset</small></div>
+  </section>
+
+  <section class="grid2m">
+    <div class="panel">
+      <h3>Live metrics <span class="muted">every second, against simulator ground truth</span></h3>
+      <div class="sub"><span id="liveNote" class="muted"></span></div>
+      <div id="liveMetrics" class="empty">Start the simulator to see live accuracy against ground truth.</div>
+    </div>
+    <div class="panel">
+      <h3>Training benchmark <span class="muted">fixed, held-out test split</span></h3>
+      <div class="sub"><span id="sumText" class="muted">waiting for training to finish</span></div>
+      <div id="metrics" class="empty">Training…</div>
+    </div>
+  </section>
+
+
+  <section class="row2">
+    <div class="panel">
+      <h3>Risk trend <span class="muted">last 60 ticks, highest host risk</span></h3>
+      <div class="chart"><canvas id="riskChart"></canvas></div>
+    </div>
+    <div class="panel">
+      <h3>Verdict distribution</h3>
+      <div class="chart"><canvas id="donut"></canvas></div>
+    </div>
+  </section>
+
+  <section class="row2b">
+    <div class="panel">
+      <h3>Hosts <span id="targetMeta" class="muted"></span></h3>
+      <div id="hosts" class="hosts"><div class="empty">No traffic yet</div></div>
+    </div>
+    <div class="panel">
+      <h3>Why the last alert? <span id="explainMeta" class="muted">SHAP feature contributions</span></h3>
+      <div class="chart" style="height:220px"><canvas id="shap"></canvas></div>
+      <div id="explainNote" class="muted" style="margin-top:10px">Start monitoring to see an explanation for the highest-risk alert.</div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h3>Detection history <span class="muted">alerts only, Suspicious and Malicious</span></h3>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Time</th><th>Host</th><th>Verdict</th><th>Attack</th><th>Risk</th>
+          <th>XGB / LSTM / AE</th><th>Ground truth</th><th>Correct</th></tr></thead>
+        <tbody id="hist"><tr><td colspan="8" class="empty">No alerts yet</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const METRIC_COLS = ["Accuracy","Precision","Recall","F1-Score","Specificity"];
+let riskChart, donut, shapChart, metricsShown = false;
+
+function initCharts() {
+  Chart.defaults.color = "#7d8ba8";
+  Chart.defaults.borderColor = "#1c2740";
+  Chart.defaults.font.family = "Inter, Segoe UI, system-ui, sans-serif";
+  const common = {responsive: true, maintainAspectRatio: false, animation: false};
+  riskChart = new Chart($("riskChart"), {type: "line",
+    data: {labels: [], datasets: [{label: "Risk %", data: [], borderColor: "#60a5fa",
+      backgroundColor: ctx => {
+        const g = ctx.chart.ctx.createLinearGradient(0, 0, 0, 240);
+        g.addColorStop(0, "rgba(96,165,250,.35)"); g.addColorStop(1, "rgba(96,165,250,0)");
+        return g; },
+      fill: true, tension: .35, pointRadius: 0, borderWidth: 2}]},
+    options: {...common, plugins: {legend: {display: false}},
+      scales: {y: {min: 0, max: 100, grid: {color: "#1c2740"}}, x: {display: false}}}});
+  donut = new Chart($("donut"), {type: "doughnut",
+    data: {labels: ["Normal", "Suspicious", "Malicious"],
+      datasets: [{data: [0, 0, 0], backgroundColor: ["#34d399", "#fbbf24", "#f43f5e"], borderWidth: 0, hoverOffset: 6}]},
+    options: {...common, cutout: "70%", plugins: {legend: {position: "bottom", labels: {usePointStyle: true, padding: 16}}}}});
+  shapChart = new Chart($("shap"), {type: "bar",
+    data: {labels: [], datasets: [{data: [], backgroundColor: [], borderRadius: 6}]},
+    options: {...common, indexAxis: "y", plugins: {legend: {display: false}},
+      scales: {x: {grid: {color: "#1c2740"}, title: {display: true, text: "contribution toward attack"}},
+               y: {grid: {display: false}}}}});
+}
+
+function showError(msg) {
+  const el = $("err");
+  el.hidden = !msg;
+  el.textContent = msg || "";
+}
+
+function renderBackends(b) {
+  $("backends").innerHTML = [
+    ["Classifier", b.classifier], ["Sequence model", b.sequence],
+    ["Explanation", b.explain], ["Capture", b.capture]
+  ].map(([k, v]) => `<span class="chip">${k}: <b>${esc(v)}</b></span>`).join("");
+}
+
+function metricTable(rows) {
+  return `<div class="tablewrap"><table><thead><tr><th>Model</th>${
+    METRIC_COLS.map(c => `<th>${c}</th>`).join("")}<th>TP / FP / FN / TN</th></tr></thead><tbody>${
+    rows.map(r => `<tr><td><b>${esc(r.model)}</b></td>${METRIC_COLS.map(c =>
+      `<td><div class="mbar"><i style="width:${r[c]}%"></i></div>${r[c].toFixed(2)}%</td>`).join("")}
+      <td class="mono">${r.confusion.tp} / ${r.confusion.fp} / ${r.confusion.fn} / ${r.confusion.tn}</td></tr>`).join("")
+    }</tbody></table></div>`;
+}
+
+function renderMetrics(rows, sum) {
+  $("metrics").className = "";
+  $("metrics").innerHTML = metricTable(rows);
+  $("sumText").textContent = `attack-type accuracy ${sum.attack_type_accuracy}% · ${sum.samples} synthetic sequences · trained in ${sum.seconds}s`;
+}
+
+function renderLive(m) {
+  const rows = m.live_metrics || [];
+  if (!rows.length) {
+    $("liveMetrics").className = "empty";
+    if (m.source === "live") {
+      $("liveMetrics").textContent = "Live capture has no ground-truth labels, so live accuracy cannot be measured. Use Simulator mode to see this table update.";
+    } else {
+      $("liveMetrics").textContent = m.running ? "Collecting labelled windows…" : "Start the simulator to see live accuracy against ground truth.";
+    }
+    $("liveNote").textContent = "";
+    return;
+  }
+  $("liveMetrics").className = "";
+  $("liveMetrics").innerHTML = metricTable(rows);
+  $("liveNote").textContent = `· updates every second · ${m.labelled} labelled windows`;
+}
+
+function renderHistory(list) {
+  if (!list.length) {
+    $("hist").innerHTML = `<tr><td colspan="8" class="empty">No alerts yet</td></tr>`;
+    return;
+  }
+  $("hist").innerHTML = list.map(e => {
+    const known = e.truth && e.truth !== "—";
+    const correct = known ? ((e.truth !== "Normal") === (e.verdict !== "Normal")) : null;
+    const mark = correct === null ? "—" : correct ? `<span class="ok2">✔</span>` : `<span class="bad2">✖</span>`;
+    const sc = e.scores;
+    return `<tr><td class="mono">${esc(e.time)}</td><td class="mono">${esc(e.host)}</td>
+      <td><span class="badge ${e.verdict}">${e.verdict}</span></td><td>${esc(e.attack)}</td>
+      <td><b>${e.risk}%</b></td><td class="mono">${sc.XGBoost} / ${sc.LSTM} / ${sc.Autoencoder}</td>
+      <td>${esc(e.truth)}</td><td>${mark}</td></tr>`;
+  }).join("");
+}
+
+function renderHosts(hosts) {
+  if (!hosts.length) { $("hosts").innerHTML = `<div class="empty">No traffic yet</div>`; return; }
+  $("hosts").innerHTML = hosts.map(h => `<div class="hostcard ${h.verdict}">
+    <b>${esc(h.host)}</b><span class="badge ${h.verdict}">${h.verdict}</span>
+    <span class="muted">${h.windows} windows · risk ${Math.round(h.risk)}%</span></div>`).join("");
+}
+
+function renderExplanation(x) {
+  if (!x) {
+    shapChart.data.labels = []; shapChart.data.datasets[0].data = []; shapChart.update();
+    $("explainMeta").textContent = "SHAP feature contributions";
+    return;
+  }
+  shapChart.data.labels = x.items.map(i => i.feature);
+  shapChart.data.datasets[0].data = x.items.map(i => i.value);
+  shapChart.data.datasets[0].backgroundColor = x.items.map(i => i.value >= 0 ? "#f43f5e" : "#34d399");
+  shapChart.update();
+  $("explainMeta").textContent = `host ${x.host} · risk ${x.risk}%`;
+  $("explainNote").textContent = `Method: ${x.method}. Red bars push toward attack, green toward normal.`;
+}
+
+function render(s) {
+  const t = s.training, m = s.monitor, running = !!(m && m.running);
+
+  $("trainBox").hidden = t.ready && !t.error;
+  $("trainStage").textContent = t.error ? "Training failed" : t.stage;
+  $("trainBar").style.width = t.progress + "%";
+  $("trainErr").hidden = !t.error;
+  $("trainErr").textContent = t.error || "";
+  renderBackends(s.backends);
+
+  const pill = $("pill");
+  if (t.error) { pill.textContent = "ERROR"; pill.className = "pill bad"; }
+  else if (!t.ready) { pill.textContent = "TRAINING"; pill.className = "pill warn"; }
+  else if (running) {
+    const where = m.target ? m.target : "all hosts";
+    pill.textContent = (m.source === "live" ? "LIVE" : "SIMULATOR") + " · " + where;
+    pill.className = "pill on";
+  }
+  else { pill.textContent = "IDLE"; pill.className = "pill"; }
+
+  $("btnStart").disabled = !t.ready || running;
+  $("btnStop").disabled = !running;
+  $("ip").disabled = running;
+  $("mode").disabled = running;
+  $("btnReport").classList.toggle("off", !t.ready);
+  $("btnCsv").classList.toggle("off", !(m && m.stats.windows > 0));
+
+  if (s.metrics && !metricsShown) { renderMetrics(s.metrics, s.summary); metricsShown = true; }
+  if (!m) return;
+  if (m.error) showError(m.error);
+  $("targetMeta").textContent = m.target ? "· " + m.target : "· all hosts";
+
+  const st = m.stats;
+  $("cWin").textContent = st.windows;
+  $("cNor").textContent = st.Normal;
+  $("cSus").textContent = st.Suspicious;
+  $("cMal").textContent = st.Malicious;
+  $("cHost").textContent = st.hosts;
+  donut.data.datasets[0].data = [st.Normal, st.Suspicious, st.Malicious];
+  donut.update();
+  riskChart.data.labels = m.risk.map((_, i) => i);
+  riskChart.data.datasets[0].data = m.risk;
+  riskChart.update();
+
+  renderHosts(m.hosts);
+  renderHistory(m.history);
+  renderExplanation(m.explanation);
+  renderLive(m);
+}
+
+async function api(path, body) {
+  const opts = body === undefined ? {} : {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)};
+  const r = await fetch(path, opts);
+  let j = {};
+  try { j = await r.json(); } catch (e) { throw new Error("Server returned an unexpected response"); }
+  if (!r.ok || j.ok === false) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+async function startMonitor() {
+  try {
+    await api("/api/monitor/start", {source: $("mode").value, ip: $("ip").value.trim()});
+    showError("");
+  } catch (e) { showError(e.message); }
+  poll();
+}
+
+async function stopMonitor() {
+  try { await api("/api/monitor/stop", {}); } catch (e) { showError(e.message); }
+  poll();
+}
+
+async function poll() {
+  try { render(await api("/api/status")); }
+  catch (e) { showError("Cannot reach server: " + e.message); }
+}
+
+window.addEventListener("DOMContentLoaded", () => {
+  initCharts();
+  $("btnStart").onclick = startMonitor;
+  $("btnStop").onclick = stopMonitor;
+  poll();
+  setInterval(poll, 1000);
+});
+
+$("datasetForm").addEventListener("submit", async function(event) {
+  event.preventDefault();
+
+  const file = $("datasetFile").files[0];
+  const message = $("datasetMessage");
+
+  if (!file) {
+    message.textContent = "Please select a CSV file.";
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("dataset", file);
+
+  message.textContent = "Uploading dataset...";
+
+  try {
+    const response = await fetch("/api/dataset/upload", {
+      method: "POST",
+      body: formData
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || !result.ok) {
+      throw new Error(result.error || "Upload failed");
+    }
+
+    message.textContent =
+      "Uploaded: " + result.filename +
+      " | Rows: " + result.row_count;
+  } catch (error) {
+    message.textContent = "Error: " + error.message;
+  }
+});
+</script>
+</body>
+</html>
